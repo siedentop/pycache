@@ -1,4 +1,4 @@
-# import unittest
+import unittest
 from pycallgraph import PyCallGraph
 from pycallgraph.output import GraphvizOutput
 
@@ -36,7 +36,13 @@ class Callgraph:
         print(graph)
         return ret
         
-
+    def __conforms(self, protocol):
+        return False
+    
+    def __eq__(self, other):
+        return self.graph == other.graph
+    def __ne__(self, other):
+        return not self == other
 
 # class CallgraphTest(unittest.TestCase):
 #     def testSimple(self):
@@ -78,7 +84,7 @@ class Callgraph:
 #         cg.stop()
 
 if __name__ == '__main__':
-    #unittest.main()
-    cg = Callgraph()
-    y = cg.execute(func_outer, 3)
-    print('Result: %s' %(y))
+    unittest.main()
+    # cg = Callgraph()
+    # y = cg.execute(func_outer, 3)
+    # print('Result: %s' %(y))
