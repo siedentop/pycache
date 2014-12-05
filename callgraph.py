@@ -43,45 +43,56 @@ class Callgraph:
         return self.graph == other.graph
     def __ne__(self, other):
         return not self == other
+    def unchanged(self):
+        '''Checks each function in the callgraph whether it has changed.
+        Returns True if all the function have their original code-hash. False otherwise.
+        '''
+        return False
 
-# class CallgraphTest(unittest.TestCase):
-#     def testSimple(self):
-#         def func_inner(x):
-#             return x
-#         def func_outer(x):
-#             return 2*func_inner(x)
-#
-#         cg = Callgraph()
-#         cg.start()
-#         y = func_outer(3)
-#         cg.stop()
-#         self.assertEqual(y, 6)
-#         self.assertEqual(cg.graph, [func_inner, func_outer])
-#
-#
-#     def testRecursive(self):
-#         pass
-#     def testImportedModule(self):
-#         '''If a non-standard-library module is imported, those functions should
-#            should also incorporated in the call graph.
-#            I don't know what the behaviour should be in this case.
-#         '''
-#         pass
-#     def testCfunctions(self):
-#         '''Library functions in C-should also be handled somehow.
-#         Not sure how they should be handled.
-#         '''
-#         pass
-#     def testGenerators(self):
-#         def func_gen(n):
-#             i = 0
-#             while i < n:
-#                 i += 1
-#                 yield i
-#         cg = CallGraph()
-#         cg.start()
-#         self.assertEqual([1, 2, 3], list(func_gen(3)))
-#         cg.stop()
+class CallgraphTest(unittest.TestCase):
+    def testSimple(self):
+        def func_inner(x):
+            return x
+        def func_outer(x):
+            return 2*func_inner(x)
+
+        cg = Callgraph()
+        cg.start()
+        y = func_outer(3)
+        cg.stop()
+        self.assertEqual(y, 6)
+        self.assertEqual(cg.graph, [func_inner, func_outer])
+
+
+    def testRecursive(self):
+        pass
+    def testImportedModule(self):
+        '''If a non-standard-library module is imported, those functions should
+           should also incorporated in the call graph.
+           I don't know what the behaviour should be in this case.
+        '''
+        pass
+    def testCfunctions(self):
+        '''Library functions in C-should also be handled somehow.
+        Not sure how they should be handled.
+        '''
+        pass
+    def testGenerators(self):
+        def func_gen(n):
+            i = 0
+            while i < n:
+                i += 1
+                yield i
+        cg = CallGraph()
+        cg.start()
+        self.assertEqual([1, 2, 3], list(func_gen(3)))
+        cg.stop()
+    
+    def test_unchanged(self):
+        ''' Look at each function in the callgraph and check that its code-hash
+        has not changed. 
+        '''
+        raise NotImplemented
 
 if __name__ == '__main__':
     unittest.main()

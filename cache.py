@@ -25,16 +25,18 @@ class Cache:
         raise NotImplementedError
     def delete(self):
         raise NotImplementedError
-    def compare(self, funcname):
+    def get(self, funcname, code_hash, args, kwargs):
         ''' Check for presence of cached value for given parameters.
-        :param funcname:
-        :return: None if not present, else returns 'return_values' from funcname with fitting arguments.
+        Checks that the code_hash hasn't changed as well as that each function
+        in the callgraph is the same.
+        The key is thus (funcname, args, kwargs), with
+        self.callgraph and self.code_hash being checked for changes.
+        :return: return_values if function has already been cached. Raises KeyError if no key could be found.
         '''
-        return None
+        raise KeyError
     def invalidate(self):
         ''' Invalidate the complete cache. '''
         raise NotImplementedError
-
 
 class SqliteCache(Cache):
     def __init__(self, config):
@@ -49,7 +51,13 @@ class PickleCache(Cache):
         self.picklepath = None # Needed in case config['file'] fails.
         self.picklepath = config['file']
         if os.path.exists(self.picklepath):
-            self.data = pickle.load(open(self.picklepath, 'rb'))
+            try:
+                f = open(self.picklepath, 'rb')
+                self.data = pickle.load(f)
+            except EOFError as e:
+                self.data = dict()
+            finally:
+                 f.close()
         else:
             self.data = dict()
     def add(self, funcname, code_hash, callgraph,
@@ -61,18 +69,49 @@ class PickleCache(Cache):
         self.data[funcname][args_hash] = {'hash': code_hash, 'callgraph': callgraph,
                                'args': args, 'kwargs': kwargs, 'return_values': return_values,
                                'when': runtime, 'howlong': runningtime}
+    def get(self, funcname, code_hash, args, kwargs):
+        # TODO: Much of this should be in parent class, as it is generic. A class split into CacheInterface and CacheStorage would do.
+        args_hash = hash((args, kwargs))
+        cache = self.data[funcname][args_hash] # Raises KeyError if absent
+        # Check function for changes and invalidate if necessary
+        if cache['hash'] == code_hash and cache['callgraph'].unchanged():
+            return cache['return_values']
+        else:
+            self.data[funcname] = dict()
+            raise KeyError('Function %s has changed. Cache invalidated.' %(funcname))
 
     def save(self):
         with open(self.picklepath, 'wb') as f:
             pickle.dump(self.data, f, pickle.HIGHEST_PROTOCOL)
-        
 
     def __del__(self):
         # TODO: __del__ parent
         try:
             self.save()
-        except:
+        except IOError:
             print("Could not save cache!")
+
+class MockCallgraph:
+        def __init__(self, graph):
+            self.graph = graph
+            self.change_flag = False
+        def __eq__(self, other):
+            return self.graph == other.graph
+        def __ne__(self, other):
+            return not self == other
+        def __getstate__(self):
+            return (self.graph, self.change_flag)
+        def __setstate__(self,state):
+            self.graph = state[0]
+            self.change_flag = state[1]
+        def unchanged(self):
+            return not self.change_flag
+
+def funcA(x):
+    return x
+
+def funcB(x):
+    return 2*x
 
 class TestPickleCache(unittest.TestCase):
     def setUp(self):
@@ -81,27 +120,48 @@ class TestPickleCache(unittest.TestCase):
             os.remove(fname)
         config = {'file': fname}
         self.return_values = 5
+        self.callgraph = MockCallgraph('original')
         self.uut = PickleCache(config)
-        self.uut.add(funcname='myfunc', code_hash=123, callgraph=None, 
-                args=None, kwargs=None, return_values = self.return_values)
+        self.args = None
+        self.kwargs = None
+        self.uut.add(funcname='myfunc', code_hash=123, callgraph=self.callgraph, 
+                args=self.args, kwargs=self.kwargs, return_values = self.return_values)
         
     def tearDown(self):
         #del self.uut
         pass
     def test_compare_code_hash(self):
-        self.assertEqual(self.return_values, self.uut.compare(funcname='myfunc', code_hash=123, ))
-        self.assertNone(self.uut.compare(funcname='myfunc', code_hash=124))
+        self.assertEqual(self.return_values, self.uut.get(funcname='myfunc',
+                                             code_hash=123, args=self.args,
+                                             kwargs=self.kwargs))
+        with self.assertRaises(KeyError):
+            self.uut.get('myfunc', 124, self.args, self.kwargs)
     def test_compare_funcname(self):
-        self.assertEqual(self.return_values, self.uut.compare(funcname='myfunc'))
-        self.assertNone(self.uut.compare(funcname='notmyfunc'))
+        self.assertEqual(self.return_values, self.uut.get('myfunc', 123, self.args,
+                                                          self.kwargs))
+        with self.assertRaises(KeyError):
+            self.uut.get('notmyfunc', 123, self.args, self.kwargs)
     def test_callgraph_changed(self):
         '''One of the functions in the callgraph has a changed hash'''
-        self.uut.compare()
+        self.assertEqual(self.return_values, self.uut.get('myfunc', 123, self.args,
+                                                          self.kwargs))
+        self.callgraph.change_flag = True
+        #for k, v in self.uut.data['myfunc']:
+            #v['callgraph'].change_flag = True
+        with self.assertRaises(KeyError):
+            self.uut.get('myfunc', 123, self.args, self.kwargs)
+        
+    def test_args(self):
+        with self.assertRaises(KeyError):
+            self.uut.get('myfunc', 123, 'args', self.kwargs)
+    def test_kwargs(self):
+        with self.assertRaises(KeyError):
+            self.uut.get('myfunc', 123, self.args, 'kwargs')
     def test_load_from_disk(self):
         config = {'file': self.uut.picklepath}
         del self.uut
         new_cache = PickleCache(config)
-        self.assertEqual(self.return_values, new_cache.compare(funcname='myfunc', code_hash=123))
+        self.assertEqual(self.return_values, new_cache.get('myfunc', 123, self.args, self.kwargs))
         self.uut = new_cache
     
     
