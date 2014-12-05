@@ -76,9 +76,12 @@ class PickleCache(Cache):
         # Check function for changes and invalidate if necessary
         if cache['hash'] == code_hash and cache['callgraph'].unchanged():
             return cache['return_values']
-        else:
-            self.data[funcname] = dict()
+        elif cache['hash'] != code_hash:
+            del self.data[funcname] # Invalidate everything
             raise KeyError('Function %s has changed. Cache invalidated.' %(funcname))
+        else: # Only invalidate for (args,kwargs) because callgraph is argument specific.
+            del self.data[funcname][args_hash]
+            raise KeyError('Function %s has changed for arguments %s/%s. Cache invalidated for these inputs.' %(funcname, args, kwargs))
 
     def save(self):
         with open(self.picklepath, 'wb') as f:
