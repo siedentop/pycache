@@ -12,8 +12,6 @@ def func_outer(x):
     func_inner2(x)
     return 3*func_inner(x) + 7*func_inner(x)
 
-
-
 class Callgraph:
     def __init__(self, output_file='callgraph.png'):
         self.graphviz = GraphvizOutput()
@@ -21,7 +19,7 @@ class Callgraph:
     
     def execute(self, function, *args, **kwargs):
         with PyCallGraph(output=self.graphviz):
-            ret = function(*args, **kwargs) # Potentially not a good way in case of generators
+            ret = function(*args, **kwargs)
 
         self.graph = {}
 
@@ -61,7 +59,6 @@ class CallgraphTest(unittest.TestCase):
         y = cg.execute(__func_outer, 3)
         self.assertEqual(8, y)
         self.assertEqual(set([__func_inner.__name__, __func_outer.__name__]), cg.call_set())
-
     
     def testChanges(self):
         def __func_inner(x):
@@ -137,6 +134,10 @@ class CallgraphTest(unittest.TestCase):
         cg = Callgraph()
         self.assertEqual(10, cg.execute(outer_func, 5))
         self.assertEqual(set(['outer_func', 'trivial']), cg.call_set())
+        
+    def test_multiple_calls(self):
+        ''' Call funcA once, then call funcB, make sure funcA does not appear in callgraph of funcB'''.
+        pass
 
 if __name__ == '__main__':
     unittest.main()
