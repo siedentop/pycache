@@ -1,6 +1,5 @@
 import unittest
-from pycallgraph import PyCallGraph
-from pycallgraph.output import GraphvizOutput
+from tracer import Tracer
 
 def func_inner(x):
     return 2*x
@@ -12,44 +11,45 @@ def func_outer(x):
     func_inner2(x)
     return 3*func_inner(x) + 7*func_inner(x)
 
+
 class Callgraph:
-    def __init__(self, output_file='callgraph.png'):
-        self.graphviz = GraphvizOutput()
-        self.graphviz.output_file = output_file
+    def __init__(self, threaded = False):
+        self.threaded = threaded
     
     def execute(self, function, *args, **kwargs):
-        with PyCallGraph(output=self.graphviz):
+        output = None
+        tracer = Tracer(output, self.threaded)
+        with tracer:
             ret = function(*args, **kwargs)
-
-        self.graph = {}
-
-        for edge in self.graphviz.processor.edges():
-            if self.graph.has_key(edge.src_func):
-                self.graph[edge.src_func].add(edge.dst_func)
-            else:
-                self.graph[edge.src_func] = set([edge.dst_func])
-        # Remove '__main__':
-        self.graph.pop('__main__', None)
+            
+        self.graph = dict()
+        self.graph[function.__name__] = hash(function.__code__.co_code)
+        for node in tracer.nodes():
+            if node.name != '__main__' and not node.name.startswith('tracer'):
+                self.graph[node.name] = node.hash
         return ret
 
-    def __conforms(self, protocol):
-        return False
-    
-    def __eq__(self, other):
-        return self.graph == other.graph
-    def __ne__(self, other):
-        return not self == other
     def unchanged(self):
         '''Checks each function in the callgraph whether it has changed.
         Returns True if all the function have their original code-hash. False otherwise.
         '''
-        return False
+        for func, codehash in self.graph.iteritems():
+            f = eval(func)
+            if hash(f.__code__.co_code) != codehash:
+                return False
+        return True
+
+    def __eq__(self, other):
+        return self.graph == other.graph
+    def __ne__(self, other):
+        return not self == other
     def call_set(self):
         ''' Returns `set` of called functions '''
-        return set(self.graph)
+        return set([key for key in self.graph])
 
 class CallgraphTest(unittest.TestCase):
     def testSimple(self):
+        global __func_inner, __func_outer
         def __func_inner(x):
             return 1+x
         def __func_outer(x):
@@ -61,20 +61,21 @@ class CallgraphTest(unittest.TestCase):
         self.assertEqual(set([__func_inner.__name__, __func_outer.__name__]), cg.call_set())
     
     def testChanges(self):
-        def __func_inner(x):
+        global func_inner, func_outer
+        def func_inner(x):
             return x
-        def __func_outer(x):
-            return 2*__func_inner(x)
+        def func_outer(x):
+            return 2*func_inner(x)
 
         cg = Callgraph()
-        y = cg.execute(__func_outer, 3)
+        y = cg.execute(func_outer, 3)
         self.assertEqual(6, y)
         self.assertTrue(cg.unchanged())
-        def __func_inner(x):
+        def func_inner(x):
             return 3+x
         self.assertFalse(cg.unchanged())
         # Change back!
-        def __func_inner(x):
+        def func_inner(x):
             return x
         self.assertTrue(cg.unchanged())
 
@@ -115,6 +116,11 @@ class CallgraphTest(unittest.TestCase):
         ''' Look at each function in the callgraph and check that its code-hash
         has not changed. 
         '''
+        global func_inner, func_outer
+        def func_outer(x):
+            return 1 + func_inner(x)
+        def func_inner(x):
+            return 3*x
         cg = Callgraph()
         cg.execute(func_outer, 5)
         self.assertTrue(cg.unchanged())
@@ -136,7 +142,7 @@ class CallgraphTest(unittest.TestCase):
         self.assertEqual(set(['outer_func', 'trivial']), cg.call_set())
         
     def test_multiple_calls(self):
-        ''' Call funcA once, then call funcB, make sure funcA does not appear in callgraph of funcB'''.
+        ''' Call funcA once, then call funcB, make sure funcA does not appear in callgraph of funcB.'''
         pass
 
 if __name__ == '__main__':
